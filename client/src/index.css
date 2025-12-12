@@ -181,3 +181,62 @@ header span {
 .input-form button:hover {
   background: #0073e6;
 }
+
+.reaction-picker {
+  display: none;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.message:hover .reaction-picker {
+  display: flex;
+}
+
+.reaction-btn {
+  background: #f0f2f5;
+  border: none;
+  border-radius: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.reaction-btn:hover {
+  background: #e4e6e9;
+  transform: scale(1.2);
+}
+
+.reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.reaction-badge {
+  background: #f0f2f5;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.reaction-badge:hover {
+  background: #e4e6e9;
+}
+
+.reaction-badge.active {
+  background: #e7f3ff;
+  border-color: #0084ff;
+}
+
+.message.own .reaction-picker {
+  justify-content: flex-end;
+}
+
+.message.own .reactions {
+  justify-content: flex-end;
+}

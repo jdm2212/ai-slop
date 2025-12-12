@@ -1,11 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 
 interface ChatMessage {
-  type: "message" | "join" | "leave";
+  type: "message" | "join" | "leave" | "reaction";
+  id?: string;
   username: string;
   content: string;
   timestamp: number;
+  reactions?: Record<string, string[]>;
+  messageId?: string;
+  emoji?: string;
 }
+
+const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
 
 function App() {
   const [username, setUsername] = useState("");
@@ -32,7 +38,17 @@ function App() {
 
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data) as ChatMessage;
-      setMessages((prev) => [...prev, message]);
+      if (message.type === "reaction") {
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === message.messageId
+              ? { ...msg, reactions: message.reactions }
+              : msg
+          )
+        );
+      } else {
+        setMessages((prev) => [...prev, message]);
+      }
     };
 
     ws.onclose = () => {
@@ -52,6 +68,17 @@ function App() {
       })
     );
     setInputMessage("");
+  };
+
+  const sendReaction = (messageId: string, emoji: string) => {
+    if (!wsRef.current) return;
+    wsRef.current.send(
+      JSON.stringify({
+        type: "reaction",
+        messageId,
+        emoji,
+      })
+    );
   };
 
   const formatTime = (timestamp: number) => {
@@ -100,6 +127,31 @@ function App() {
                     <span className="time">{formatTime(msg.timestamp)}</span>
                   </div>
                   <p>{msg.content}</p>
+                  <div className="reaction-picker">
+                    {REACTIONS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        onClick={() => sendReaction(msg.id!, emoji)}
+                        className="reaction-btn"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                  {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                    <div className="reactions">
+                      {Object.entries(msg.reactions).map(([emoji, users]) => (
+                        <button
+                          key={emoji}
+                          onClick={() => sendReaction(msg.id!, emoji)}
+                          className={`reaction-badge ${users.includes(username) ? "active" : ""}`}
+                          title={users.join(", ")}
+                        >
+                          {emoji} {users.length}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </>
               ) : (
                 <p className="system-message">{msg.content}</p>
