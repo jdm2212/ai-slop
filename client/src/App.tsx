@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, ChangeEvent, KeyboardEvent, FormEvent } from "react";
 import EmojiPicker from "./EmojiPicker";
 
-type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history";
+type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history" | "thread_message" | "open_thread" | "thread_history";
 
 interface ChatMessage {
   type: MessageType;
@@ -15,6 +15,9 @@ interface ChatMessage {
   channel?: string | undefined;
   channels?: string[] | undefined;
   messages?: ChatMessage[] | undefined;
+  threadId?: string | undefined;
+  replyCount?: number | undefined;
+  parentMessage?: ChatMessage | undefined;
 }
 
 const QUICK_REACTIONS: readonly string[] = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
@@ -28,12 +31,21 @@ function App(): JSX.Element {
   const [currentChannel, setCurrentChannel] = useState<string>("general");
   const [newChannelName, setNewChannelName] = useState<string>("");
   const [emojiPickerMessageId, setEmojiPickerMessageId] = useState<string | null>(null);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [threadMessages, setThreadMessages] = useState<ChatMessage[]>([]);
+  const [threadParentMessage, setThreadParentMessage] = useState<ChatMessage | null>(null);
+  const [threadInput, setThreadInput] = useState<string>("");
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const threadMessagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect((): void => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect((): void => {
+    threadMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [threadMessages]);
 
   const connectToChat = (): void => {
     if (!username.trim()) return;
@@ -61,6 +73,23 @@ function App(): JSX.Element {
             return msg;
           })
         );
+      } else if (message.type === "thread_history") {
+        setThreadMessages(message.messages ?? []);
+        if (message.parentMessage) {
+          setThreadParentMessage(message.parentMessage);
+        }
+      } else if (message.type === "thread_message") {
+        setThreadMessages((prev: ChatMessage[]): ChatMessage[] => [...prev, message]);
+      } else if (message.type === "message" && message.id) {
+        setMessages((prev: ChatMessage[]): ChatMessage[] => {
+          const existingIndex: number = prev.findIndex((m: ChatMessage): boolean => m.id === message.id);
+          if (existingIndex >= 0) {
+            const updated: ChatMessage[] = [...prev];
+            updated[existingIndex] = message;
+            return updated;
+          }
+          return [...prev, message];
+        });
       } else {
         setMessages((prev: ChatMessage[]): ChatMessage[] => [...prev, message]);
       }
@@ -163,6 +192,44 @@ function App(): JSX.Element {
     sendReaction(messageId, emoji);
   };
 
+  const openThread = (messageId: string): void => {
+    if (!wsRef.current) return;
+    setActiveThreadId(messageId);
+    setThreadMessages([]);
+    setThreadParentMessage(null);
+    wsRef.current.send(
+      JSON.stringify({
+        type: "open_thread",
+        threadId: messageId,
+      })
+    );
+  };
+
+  const closeThread = (): void => {
+    setActiveThreadId(null);
+    setThreadMessages([]);
+    setThreadParentMessage(null);
+    setThreadInput("");
+  };
+
+  const sendThreadMessage = (e: FormEvent<HTMLFormElement>): void => {
+    e.preventDefault();
+    if (!threadInput.trim() || !wsRef.current || !activeThreadId) return;
+
+    wsRef.current.send(
+      JSON.stringify({
+        type: "thread_message",
+        threadId: activeThreadId,
+        content: threadInput,
+      })
+    );
+    setThreadInput("");
+  };
+
+  const handleThreadInputChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setThreadInput(e.target.value);
+  };
+
   if (!isJoined) {
     return (
       <div className="container">
@@ -259,24 +326,34 @@ function App(): JSX.Element {
                         />
                       )}
                     </div>
-                    {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                      <div className="reactions">
-                        {Object.entries(msg.reactions).map(([emoji, users]: [string, string[]]): JSX.Element | null => {
-                          const messageId: string | undefined = msg.id;
-                          if (!messageId) return null;
-                          return (
-                            <button
-                              key={emoji}
-                              onClick={(): void => sendReaction(messageId, emoji)}
-                              className={`reaction-badge ${users.includes(username) ? "active" : ""}`}
-                              title={users.join(", ")}
-                            >
-                              {emoji} {users.length}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
+                    <div className="message-actions">
+                      {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                        <div className="reactions">
+                          {Object.entries(msg.reactions).map(([emoji, users]: [string, string[]]): JSX.Element | null => {
+                            const messageId: string | undefined = msg.id;
+                            if (!messageId) return null;
+                            return (
+                              <button
+                                key={emoji}
+                                onClick={(): void => sendReaction(messageId, emoji)}
+                                className={`reaction-badge ${users.includes(username) ? "active" : ""}`}
+                                title={users.join(", ")}
+                              >
+                                {emoji} {users.length}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {msg.id && (
+                        <button
+                          className="reply-btn"
+                          onClick={(): void => openThread(msg.id as string)}
+                        >
+                          {msg.replyCount ? `${msg.replyCount} ${msg.replyCount === 1 ? "reply" : "replies"}` : "Reply"}
+                        </button>
+                      )}
+                    </div>
                   </>
                 ) : (
                   <p className="system-message">{msg.content}</p>
@@ -296,6 +373,52 @@ function App(): JSX.Element {
             <button type="submit">Send</button>
           </form>
         </div>
+
+        {activeThreadId && (
+          <aside className="thread-panel">
+            <div className="thread-header">
+              <h2>Thread</h2>
+              <button className="close-thread-btn" onClick={closeThread}>×</button>
+            </div>
+
+            {threadParentMessage && (
+              <div className="thread-parent">
+                <div className="message-header">
+                  <strong>{threadParentMessage.username}</strong>
+                  <span className="time">{formatTime(threadParentMessage.timestamp)}</span>
+                </div>
+                <p>{threadParentMessage.content}</p>
+              </div>
+            )}
+
+            <div className="thread-divider">
+              {threadMessages.length} {threadMessages.length === 1 ? "reply" : "replies"}
+            </div>
+
+            <div className="thread-messages">
+              {threadMessages.map((msg: ChatMessage, index: number): JSX.Element => (
+                <div key={index} className={`thread-message ${msg.username === username ? "own" : ""}`}>
+                  <div className="message-header">
+                    <strong>{msg.username}</strong>
+                    <span className="time">{formatTime(msg.timestamp)}</span>
+                  </div>
+                  <p>{msg.content}</p>
+                </div>
+              ))}
+              <div ref={threadMessagesEndRef} />
+            </div>
+
+            <form onSubmit={sendThreadMessage} className="thread-input-form">
+              <input
+                type="text"
+                placeholder="Reply..."
+                value={threadInput}
+                onChange={handleThreadInputChange}
+              />
+              <button type="submit">Send</button>
+            </form>
+          </aside>
+        )}
       </div>
     </div>
   );

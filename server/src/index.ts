@@ -3,7 +3,7 @@ import cors from "cors";
 import { createServer, Server as HttpServer } from "http";
 import { WebSocketServer, WebSocket, RawData } from "ws";
 
-type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history";
+type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history" | "thread_message" | "open_thread" | "thread_history";
 
 interface ChatMessage {
   type: MessageType;
@@ -17,11 +17,15 @@ interface ChatMessage {
   channel?: string | undefined;
   channels?: string[] | undefined;
   messages?: ChatMessage[] | undefined;
+  threadId?: string | undefined;
+  replyCount?: number | undefined;
+  parentMessage?: ChatMessage | undefined;
 }
 
 interface ClientInfo {
   username: string;
   channel: string;
+  activeThreadId?: string | undefined;
 }
 
 const app: express.Application = express();
@@ -35,6 +39,7 @@ const clients: Map<WebSocket, ClientInfo> = new Map();
 const channels: Set<string> = new Set(["general"]);
 const messagesByChannel: Map<string, Map<string, ChatMessage>> = new Map();
 messagesByChannel.set("general", new Map());
+const threadMessages: Map<string, ChatMessage[]> = new Map();
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
@@ -77,6 +82,36 @@ function sendChannelHistory(ws: WebSocket, channel: string): void {
     type: "history",
     channel,
     messages,
+    username: "",
+    content: "",
+    timestamp: Date.now(),
+  };
+  ws.send(JSON.stringify(historyMessage));
+}
+
+function broadcastToThread(message: ChatMessage, threadId: string): void {
+  const data: string = JSON.stringify(message);
+  wss.clients.forEach((client: WebSocket): void => {
+    const clientInfo: ClientInfo | undefined = clients.get(client);
+    if (client.readyState === WebSocket.OPEN && clientInfo?.activeThreadId === threadId) {
+      client.send(data);
+    }
+  });
+}
+
+function sendThreadHistory(ws: WebSocket, threadId: string, channel: string): void {
+  const channelMessages: Map<string, ChatMessage> | undefined = messagesByChannel.get(channel);
+  if (!channelMessages) return;
+
+  const parentMessage: ChatMessage | undefined = channelMessages.get(threadId);
+  if (!parentMessage) return;
+
+  const replies: ChatMessage[] = threadMessages.get(threadId) ?? [];
+  const historyMessage: ChatMessage = {
+    type: "thread_history",
+    threadId,
+    messages: replies,
+    parentMessage,
     username: "",
     content: "",
     timestamp: Date.now(),
@@ -214,6 +249,58 @@ wss.on("connection", (ws: WebSocket): void => {
           };
           broadcastToAll(channelListMessage);
         }
+      } else if (message.type === "open_thread") {
+        const clientInfo: ClientInfo | undefined = clients.get(ws);
+        if (!clientInfo) return;
+
+        const threadId: string | undefined = message.threadId;
+        if (!threadId) return;
+
+        clientInfo.activeThreadId = threadId;
+        sendThreadHistory(ws, threadId, clientInfo.channel);
+      } else if (message.type === "thread_message") {
+        const clientInfo: ClientInfo | undefined = clients.get(ws);
+        if (!clientInfo) return;
+
+        const threadId: string | undefined = message.threadId;
+        if (!threadId) return;
+
+        const channelMessages: Map<string, ChatMessage> | undefined = messagesByChannel.get(clientInfo.channel);
+        if (!channelMessages) return;
+
+        const parentMessage: ChatMessage | undefined = channelMessages.get(threadId);
+        if (!parentMessage) return;
+
+        const id: string = generateId();
+        const threadReply: ChatMessage = {
+          type: "thread_message",
+          id,
+          threadId,
+          username: clientInfo.username,
+          content: message.content,
+          timestamp: Date.now(),
+          reactions: {},
+        };
+
+        const existingReplies: ChatMessage[] = threadMessages.get(threadId) ?? [];
+        existingReplies.push(threadReply);
+        threadMessages.set(threadId, existingReplies);
+
+        parentMessage.replyCount = existingReplies.length;
+
+        broadcastToThread(threadReply, threadId);
+
+        const updateMessage: ChatMessage = {
+          type: "message",
+          id: parentMessage.id,
+          username: parentMessage.username,
+          content: parentMessage.content,
+          timestamp: parentMessage.timestamp,
+          reactions: parentMessage.reactions,
+          replyCount: parentMessage.replyCount,
+          channel: clientInfo.channel,
+        };
+        broadcast(updateMessage, clientInfo.channel);
       }
     } catch (err: unknown) {
       console.error("Failed to parse message:", err);

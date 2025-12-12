@@ -359,3 +359,137 @@ header span {
 .message.own .reactions {
   justify-content: flex-end;
 }
+
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.reply-btn {
+  background: none;
+  border: none;
+  color: #0084ff;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.reply-btn:hover {
+  background: #e7f3ff;
+}
+
+.thread-panel {
+  width: 350px;
+  background: white;
+  border-left: 1px solid #eee;
+  display: flex;
+  flex-direction: column;
+}
+
+.thread-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.thread-header h2 {
+  font-size: 18px;
+  color: #1a1a1a;
+}
+
+.close-thread-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #666;
+  cursor: pointer;
+  padding: 0 8px;
+  line-height: 1;
+}
+
+.close-thread-btn:hover {
+  color: #1a1a1a;
+}
+
+.thread-parent {
+  padding: 16px 20px;
+  background: #f8f9fa;
+  border-bottom: 1px solid #eee;
+}
+
+.thread-parent p {
+  background: #e9ecef;
+  padding: 10px 14px;
+  border-radius: 12px;
+  margin-top: 4px;
+}
+
+.thread-divider {
+  padding: 8px 20px;
+  font-size: 12px;
+  color: #666;
+  border-bottom: 1px solid #eee;
+  text-transform: uppercase;
+}
+
+.thread-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.thread-message {
+  max-width: 100%;
+}
+
+.thread-message p {
+  background: #f0f2f5;
+  padding: 8px 12px;
+  border-radius: 12px;
+  margin-top: 4px;
+  font-size: 14px;
+}
+
+.thread-message.own p {
+  background: #0084ff;
+  color: white;
+}
+
+.thread-input-form {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #eee;
+}
+
+.thread-input-form input {
+  flex: 1;
+  padding: 10px 14px;
+  font-size: 14px;
+  border: 1px solid #ddd;
+  border-radius: 20px;
+  outline: none;
+}
+
+.thread-input-form input:focus {
+  border-color: #0084ff;
+}
+
+.thread-input-form button {
+  padding: 10px 16px;
+  font-size: 14px;
+  background: #0084ff;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+}
