@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 
 interface ChatMessage {
-  type: "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list";
+  type: "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history";
   id?: string;
   username: string;
   content: string;
@@ -11,6 +11,7 @@ interface ChatMessage {
   emoji?: string;
   channel?: string;
   channels?: string[];
+  messages?: ChatMessage[];
 }
 
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
@@ -45,6 +46,8 @@ function App() {
       const message = JSON.parse(event.data) as ChatMessage;
       if (message.type === "channel_list") {
         setChannels(message.channels || []);
+      } else if (message.type === "history") {
+        setMessages(message.messages || []);
       } else if (message.type === "reaction") {
         setMessages((prev) =>
           prev.map((msg) =>
@@ -97,7 +100,6 @@ function App() {
       })
     );
     setCurrentChannel(channel);
-    setMessages([]);
   };
 
   const createChannel = (e: React.FormEvent) => {

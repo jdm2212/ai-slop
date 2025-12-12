@@ -4,7 +4,7 @@ import { createServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 
 interface ChatMessage {
-  type: "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list";
+  type: "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history";
   id?: string;
   username: string;
   content: string;
@@ -14,6 +14,7 @@ interface ChatMessage {
   emoji?: string;
   channel?: string;
   channels?: string[];
+  messages?: ChatMessage[];
 }
 
 interface ClientInfo {
@@ -66,6 +67,19 @@ function sendChannelList(ws: WebSocket) {
   }));
 }
 
+function sendChannelHistory(ws: WebSocket, channel: string) {
+  const channelMessages = messagesByChannel.get(channel);
+  const messages = channelMessages ? Array.from(channelMessages.values()) : [];
+  ws.send(JSON.stringify({
+    type: "history",
+    channel,
+    messages,
+    username: "",
+    content: "",
+    timestamp: Date.now(),
+  }));
+}
+
 wss.on("connection", (ws) => {
   console.log("New client connected");
   sendChannelList(ws);
@@ -77,6 +91,7 @@ wss.on("connection", (ws) => {
       if (message.type === "join") {
         const channel = "general";
         clients.set(ws, { username: message.username, channel });
+        sendChannelHistory(ws, channel);
         broadcast({
           type: "join",
           username: message.username,
@@ -158,6 +173,8 @@ wss.on("connection", (ws) => {
         }, oldChannel);
 
         clientInfo.channel = newChannel;
+
+        sendChannelHistory(ws, newChannel);
 
         broadcast({
           type: "join",
