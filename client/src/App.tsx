@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, ChangeEvent, KeyboardEvent, FormEvent } from "react";
+import EmojiPicker from "./EmojiPicker";
 
 type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history";
 
@@ -16,7 +17,7 @@ interface ChatMessage {
   messages?: ChatMessage[] | undefined;
 }
 
-const REACTIONS: readonly string[] = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
+const QUICK_REACTIONS: readonly string[] = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
 
 function App(): JSX.Element {
   const [username, setUsername] = useState<string>("");
@@ -26,6 +27,7 @@ function App(): JSX.Element {
   const [channels, setChannels] = useState<string[]>([]);
   const [currentChannel, setCurrentChannel] = useState<string>("general");
   const [newChannelName, setNewChannelName] = useState<string>("");
+  const [emojiPickerMessageId, setEmojiPickerMessageId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -142,6 +144,25 @@ function App(): JSX.Element {
     setNewChannelName(e.target.value);
   };
 
+  const openEmojiPicker = (messageId: string): void => {
+    setEmojiPickerMessageId(messageId);
+  };
+
+  const closeEmojiPicker = (): void => {
+    setEmojiPickerMessageId(null);
+  };
+
+  const handleEmojiSelect = (emoji: string): void => {
+    if (emojiPickerMessageId) {
+      sendReaction(emojiPickerMessageId, emoji);
+      closeEmojiPicker();
+    }
+  };
+
+  const handleQuickReaction = (messageId: string, emoji: string): void => {
+    sendReaction(messageId, emoji);
+  };
+
   if (!isJoined) {
     return (
       <div className="container">
@@ -209,19 +230,34 @@ function App(): JSX.Element {
                     </div>
                     <p>{msg.content}</p>
                     <div className="reaction-picker">
-                      {REACTIONS.map((emoji: string): JSX.Element | null => {
+                      {QUICK_REACTIONS.map((emoji: string): JSX.Element | null => {
                         const messageId: string | undefined = msg.id;
                         if (!messageId) return null;
                         return (
                           <button
                             key={emoji}
-                            onClick={(): void => sendReaction(messageId, emoji)}
+                            onClick={(): void => handleQuickReaction(messageId, emoji)}
                             className="reaction-btn"
                           >
                             {emoji}
                           </button>
                         );
                       })}
+                      {msg.id && (
+                        <button
+                          className="reaction-btn add-reaction-btn"
+                          onClick={(): void => openEmojiPicker(msg.id as string)}
+                          title="Add any emoji"
+                        >
+                          +
+                        </button>
+                      )}
+                      {emojiPickerMessageId === msg.id && (
+                        <EmojiPicker
+                          onEmojiSelect={handleEmojiSelect}
+                          onClose={closeEmojiPicker}
+                        />
+                      )}
                     </div>
                     {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                       <div className="reactions">
