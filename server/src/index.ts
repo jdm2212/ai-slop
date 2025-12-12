@@ -1,20 +1,22 @@
-import express from "express";
+import express, { Request, Response } from "express";
 import cors from "cors";
-import { createServer } from "http";
-import { WebSocketServer, WebSocket } from "ws";
+import { createServer, Server as HttpServer } from "http";
+import { WebSocketServer, WebSocket, RawData } from "ws";
+
+type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history";
 
 interface ChatMessage {
-  type: "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history";
-  id?: string;
+  type: MessageType;
+  id?: string | undefined;
   username: string;
   content: string;
   timestamp: number;
-  reactions?: Record<string, string[]>;
-  messageId?: string;
-  emoji?: string;
-  channel?: string;
-  channels?: string[];
-  messages?: ChatMessage[];
+  reactions?: Record<string, string[]> | undefined;
+  messageId?: string | undefined;
+  emoji?: string | undefined;
+  channel?: string | undefined;
+  channels?: string[] | undefined;
+  messages?: ChatMessage[] | undefined;
 }
 
 interface ClientInfo {
@@ -22,88 +24,91 @@ interface ClientInfo {
   channel: string;
 }
 
-const app = express();
+const app: express.Application = express();
 app.use(cors());
 app.use(express.json());
 
-const server = createServer(app);
-const wss = new WebSocketServer({ server });
+const server: HttpServer = createServer(app);
+const wss: WebSocketServer = new WebSocketServer({ server });
 
-const clients = new Map<WebSocket, ClientInfo>();
-const channels = new Set<string>(["general"]);
-const messagesByChannel = new Map<string, Map<string, ChatMessage>>();
+const clients: Map<WebSocket, ClientInfo> = new Map();
+const channels: Set<string> = new Set(["general"]);
+const messagesByChannel: Map<string, Map<string, ChatMessage>> = new Map();
 messagesByChannel.set("general", new Map());
 
 function generateId(): string {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 }
 
-function broadcast(message: ChatMessage, channel: string) {
-  const data = JSON.stringify(message);
-  wss.clients.forEach((client) => {
-    const clientInfo = clients.get(client);
+function broadcast(message: ChatMessage, channel: string): void {
+  const data: string = JSON.stringify(message);
+  wss.clients.forEach((client: WebSocket): void => {
+    const clientInfo: ClientInfo | undefined = clients.get(client);
     if (client.readyState === WebSocket.OPEN && clientInfo?.channel === channel) {
       client.send(data);
     }
   });
 }
 
-function broadcastToAll(message: ChatMessage) {
-  const data = JSON.stringify(message);
-  wss.clients.forEach((client) => {
+function broadcastToAll(message: ChatMessage): void {
+  const data: string = JSON.stringify(message);
+  wss.clients.forEach((client: WebSocket): void => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(data);
     }
   });
 }
 
-function sendChannelList(ws: WebSocket) {
-  ws.send(JSON.stringify({
+function sendChannelList(ws: WebSocket): void {
+  const message: ChatMessage = {
     type: "channel_list",
     channels: Array.from(channels),
     username: "",
     content: "",
     timestamp: Date.now(),
-  }));
+  };
+  ws.send(JSON.stringify(message));
 }
 
-function sendChannelHistory(ws: WebSocket, channel: string) {
-  const channelMessages = messagesByChannel.get(channel);
-  const messages = channelMessages ? Array.from(channelMessages.values()) : [];
-  ws.send(JSON.stringify({
+function sendChannelHistory(ws: WebSocket, channel: string): void {
+  const channelMessages: Map<string, ChatMessage> | undefined = messagesByChannel.get(channel);
+  const messages: ChatMessage[] = channelMessages ? Array.from(channelMessages.values()) : [];
+  const historyMessage: ChatMessage = {
     type: "history",
     channel,
     messages,
     username: "",
     content: "",
     timestamp: Date.now(),
-  }));
+  };
+  ws.send(JSON.stringify(historyMessage));
 }
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws: WebSocket): void => {
   console.log("New client connected");
   sendChannelList(ws);
 
-  ws.on("message", (data) => {
+  ws.on("message", (data: RawData): void => {
     try {
-      const message = JSON.parse(data.toString()) as ChatMessage;
+      const message: ChatMessage = JSON.parse(data.toString()) as ChatMessage;
 
       if (message.type === "join") {
-        const channel = "general";
+        const channel: string = "general";
         clients.set(ws, { username: message.username, channel });
         sendChannelHistory(ws, channel);
-        broadcast({
+        const joinMessage: ChatMessage = {
           type: "join",
           username: message.username,
           content: `${message.username} joined #${channel}`,
           timestamp: Date.now(),
           channel,
-        }, channel);
+        };
+        broadcast(joinMessage, channel);
       } else if (message.type === "message") {
-        const clientInfo = clients.get(ws);
+        const clientInfo: ClientInfo | undefined = clients.get(ws);
         if (!clientInfo) return;
 
-        const id = generateId();
+        const id: string = generateId();
         const chatMessage: ChatMessage = {
           type: "message",
           id,
@@ -114,115 +119,129 @@ wss.on("connection", (ws) => {
           channel: clientInfo.channel,
         };
 
-        const channelMessages = messagesByChannel.get(clientInfo.channel);
+        const channelMessages: Map<string, ChatMessage> | undefined = messagesByChannel.get(clientInfo.channel);
         if (channelMessages) {
           channelMessages.set(id, chatMessage);
         }
         broadcast(chatMessage, clientInfo.channel);
       } else if (message.type === "reaction") {
-        const clientInfo = clients.get(ws);
+        const clientInfo: ClientInfo | undefined = clients.get(ws);
         if (!clientInfo) return;
 
-        const channelMessages = messagesByChannel.get(clientInfo.channel);
-        const targetMessage = channelMessages?.get(message.messageId!);
-        if (targetMessage) {
-          const emoji = message.emoji!;
+        const messageId: string | undefined = message.messageId;
+        const emoji: string | undefined = message.emoji;
+        if (!messageId || !emoji) return;
 
-          if (!targetMessage.reactions) {
-            targetMessage.reactions = {};
-          }
-          if (!targetMessage.reactions[emoji]) {
-            targetMessage.reactions[emoji] = [];
-          }
+        const channelMessages: Map<string, ChatMessage> | undefined = messagesByChannel.get(clientInfo.channel);
+        if (!channelMessages) return;
 
-          const userIndex = targetMessage.reactions[emoji].indexOf(clientInfo.username);
+        const targetMessage: ChatMessage | undefined = channelMessages.get(messageId);
+        if (!targetMessage) return;
+
+        if (!targetMessage.reactions) {
+          targetMessage.reactions = {};
+        }
+
+        const emojiReactions: string[] | undefined = targetMessage.reactions[emoji];
+        if (!emojiReactions) {
+          targetMessage.reactions[emoji] = [clientInfo.username];
+        } else {
+          const userIndex: number = emojiReactions.indexOf(clientInfo.username);
           if (userIndex === -1) {
-            targetMessage.reactions[emoji].push(clientInfo.username);
+            emojiReactions.push(clientInfo.username);
           } else {
-            targetMessage.reactions[emoji].splice(userIndex, 1);
-            if (targetMessage.reactions[emoji].length === 0) {
+            emojiReactions.splice(userIndex, 1);
+            if (emojiReactions.length === 0) {
               delete targetMessage.reactions[emoji];
             }
           }
-
-          broadcast({
-            type: "reaction",
-            messageId: message.messageId!,
-            emoji,
-            username: clientInfo.username,
-            content: "",
-            timestamp: Date.now(),
-            reactions: targetMessage.reactions,
-          }, clientInfo.channel);
         }
+
+        const reactionMessage: ChatMessage = {
+          type: "reaction",
+          messageId,
+          emoji,
+          username: clientInfo.username,
+          content: "",
+          timestamp: Date.now(),
+          reactions: targetMessage.reactions,
+        };
+        broadcast(reactionMessage, clientInfo.channel);
       } else if (message.type === "switch_channel") {
-        const clientInfo = clients.get(ws);
+        const clientInfo: ClientInfo | undefined = clients.get(ws);
         if (!clientInfo) return;
 
-        const newChannel = message.channel!;
-        if (!channels.has(newChannel)) return;
+        const newChannel: string | undefined = message.channel;
+        if (!newChannel || !channels.has(newChannel)) return;
 
-        const oldChannel = clientInfo.channel;
+        const oldChannel: string = clientInfo.channel;
 
-        broadcast({
+        const leaveMessage: ChatMessage = {
           type: "leave",
           username: clientInfo.username,
           content: `${clientInfo.username} left #${oldChannel}`,
           timestamp: Date.now(),
           channel: oldChannel,
-        }, oldChannel);
+        };
+        broadcast(leaveMessage, oldChannel);
 
         clientInfo.channel = newChannel;
 
         sendChannelHistory(ws, newChannel);
 
-        broadcast({
+        const joinMessage: ChatMessage = {
           type: "join",
           username: clientInfo.username,
           content: `${clientInfo.username} joined #${newChannel}`,
           timestamp: Date.now(),
           channel: newChannel,
-        }, newChannel);
+        };
+        broadcast(joinMessage, newChannel);
       } else if (message.type === "create_channel") {
-        const channelName = message.channel!.toLowerCase().replace(/[^a-z0-9-]/g, "");
+        const rawChannelName: string | undefined = message.channel;
+        if (!rawChannelName) return;
+
+        const channelName: string = rawChannelName.toLowerCase().replace(/[^a-z0-9-]/g, "");
         if (channelName && !channels.has(channelName)) {
           channels.add(channelName);
           messagesByChannel.set(channelName, new Map());
-          broadcastToAll({
+          const channelListMessage: ChatMessage = {
             type: "channel_list",
             channels: Array.from(channels),
             username: "",
             content: "",
             timestamp: Date.now(),
-          });
+          };
+          broadcastToAll(channelListMessage);
         }
       }
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("Failed to parse message:", err);
     }
   });
 
-  ws.on("close", () => {
-    const clientInfo = clients.get(ws);
+  ws.on("close", (): void => {
+    const clientInfo: ClientInfo | undefined = clients.get(ws);
     if (clientInfo) {
-      broadcast({
+      const leaveMessage: ChatMessage = {
         type: "leave",
         username: clientInfo.username,
         content: `${clientInfo.username} left #${clientInfo.channel}`,
         timestamp: Date.now(),
         channel: clientInfo.channel,
-      }, clientInfo.channel);
+      };
+      broadcast(leaveMessage, clientInfo.channel);
       clients.delete(ws);
     }
     console.log("Client disconnected");
   });
 });
 
-app.get("/health", (req, res) => {
+app.get("/health", (_req: Request, res: Response): void => {
   res.json({ status: "ok" });
 });
 
-const PORT = process.env.PORT || 3001;
-server.listen(PORT, () => {
+const PORT: string | number = process.env["PORT"] ?? 3001;
+server.listen(PORT, (): void => {
   console.log(`Server running on http://localhost:${PORT}`);
 });

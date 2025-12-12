@@ -1,73 +1,76 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, ChangeEvent, KeyboardEvent, FormEvent } from "react";
+
+type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history";
 
 interface ChatMessage {
-  type: "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history";
-  id?: string;
+  type: MessageType;
+  id?: string | undefined;
   username: string;
   content: string;
   timestamp: number;
-  reactions?: Record<string, string[]>;
-  messageId?: string;
-  emoji?: string;
-  channel?: string;
-  channels?: string[];
-  messages?: ChatMessage[];
+  reactions?: Record<string, string[]> | undefined;
+  messageId?: string | undefined;
+  emoji?: string | undefined;
+  channel?: string | undefined;
+  channels?: string[] | undefined;
+  messages?: ChatMessage[] | undefined;
 }
 
-const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥"];
+const REACTIONS: readonly string[] = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
 
-function App() {
-  const [username, setUsername] = useState("");
-  const [isJoined, setIsJoined] = useState(false);
+function App(): JSX.Element {
+  const [username, setUsername] = useState<string>("");
+  const [isJoined, setIsJoined] = useState<boolean>(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [inputMessage, setInputMessage] = useState("");
+  const [inputMessage, setInputMessage] = useState<string>("");
   const [channels, setChannels] = useState<string[]>([]);
-  const [currentChannel, setCurrentChannel] = useState("general");
-  const [newChannelName, setNewChannelName] = useState("");
+  const [currentChannel, setCurrentChannel] = useState<string>("general");
+  const [newChannelName, setNewChannelName] = useState<string>("");
   const wsRef = useRef<WebSocket | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
+  useEffect((): void => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const connectToChat = () => {
+  const connectToChat = (): void => {
     if (!username.trim()) return;
 
-    const ws = new WebSocket("ws://localhost:3001");
+    const ws: WebSocket = new WebSocket("ws://localhost:3001");
     wsRef.current = ws;
 
-    ws.onopen = () => {
+    ws.onopen = (): void => {
       ws.send(JSON.stringify({ type: "join", username }));
       setIsJoined(true);
     };
 
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data) as ChatMessage;
+    ws.onmessage = (event: MessageEvent): void => {
+      const message: ChatMessage = JSON.parse(event.data as string) as ChatMessage;
       if (message.type === "channel_list") {
-        setChannels(message.channels || []);
+        setChannels(message.channels ?? []);
       } else if (message.type === "history") {
-        setMessages(message.messages || []);
+        setMessages(message.messages ?? []);
       } else if (message.type === "reaction") {
-        setMessages((prev) =>
-          prev.map((msg) =>
-            msg.id === message.messageId
-              ? { ...msg, reactions: message.reactions }
-              : msg
-          )
+        setMessages((prev: ChatMessage[]): ChatMessage[] =>
+          prev.map((msg: ChatMessage): ChatMessage => {
+            if (msg.id === message.messageId) {
+              return { ...msg, reactions: message.reactions };
+            }
+            return msg;
+          })
         );
       } else {
-        setMessages((prev) => [...prev, message]);
+        setMessages((prev: ChatMessage[]): ChatMessage[] => [...prev, message]);
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (): void => {
       setIsJoined(false);
       wsRef.current = null;
     };
   };
 
-  const sendMessage = (e: React.FormEvent) => {
+  const sendMessage = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
     if (!inputMessage.trim() || !wsRef.current) return;
 
@@ -80,7 +83,7 @@ function App() {
     setInputMessage("");
   };
 
-  const sendReaction = (messageId: string, emoji: string) => {
+  const sendReaction = (messageId: string, emoji: string): void => {
     if (!wsRef.current) return;
     wsRef.current.send(
       JSON.stringify({
@@ -91,7 +94,7 @@ function App() {
     );
   };
 
-  const switchChannel = (channel: string) => {
+  const switchChannel = (channel: string): void => {
     if (!wsRef.current || channel === currentChannel) return;
     wsRef.current.send(
       JSON.stringify({
@@ -102,7 +105,7 @@ function App() {
     setCurrentChannel(channel);
   };
 
-  const createChannel = (e: React.FormEvent) => {
+  const createChannel = (e: FormEvent<HTMLFormElement>): void => {
     e.preventDefault();
     if (!wsRef.current || !newChannelName.trim()) return;
     wsRef.current.send(
@@ -114,11 +117,29 @@ function App() {
     setNewChannelName("");
   };
 
-  const formatTime = (timestamp: number) => {
+  const formatTime = (timestamp: number): string => {
     return new Date(timestamp).toLocaleTimeString([], {
       hour: "2-digit",
       minute: "2-digit",
     });
+  };
+
+  const handleUsernameChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setUsername(e.target.value);
+  };
+
+  const handleUsernameKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === "Enter") {
+      connectToChat();
+    }
+  };
+
+  const handleInputMessageChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setInputMessage(e.target.value);
+  };
+
+  const handleNewChannelNameChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setNewChannelName(e.target.value);
   };
 
   if (!isJoined) {
@@ -130,8 +151,8 @@ function App() {
             type="text"
             placeholder="Enter your username"
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && connectToChat()}
+            onChange={handleUsernameChange}
+            onKeyDown={handleUsernameKeyDown}
           />
           <button onClick={connectToChat}>Join Chat</button>
         </div>
@@ -147,11 +168,11 @@ function App() {
             <h2>Channels</h2>
           </div>
           <div className="channel-list">
-            {channels.map((channel) => (
+            {channels.map((channel: string): JSX.Element => (
               <button
                 key={channel}
                 className={`channel-item ${channel === currentChannel ? "active" : ""}`}
-                onClick={() => switchChannel(channel)}
+                onClick={(): void => switchChannel(channel)}
               >
                 # {channel}
               </button>
@@ -162,7 +183,7 @@ function App() {
               type="text"
               placeholder="New channel..."
               value={newChannelName}
-              onChange={(e) => setNewChannelName(e.target.value)}
+              onChange={handleNewChannelNameChange}
             />
             <button type="submit">+</button>
           </form>
@@ -175,7 +196,7 @@ function App() {
           </header>
 
           <div className="messages">
-            {messages.map((msg, index) => (
+            {messages.map((msg: ChatMessage, index: number): JSX.Element => (
               <div
                 key={index}
                 className={`message ${msg.type} ${msg.username === username ? "own" : ""}`}
@@ -188,28 +209,36 @@ function App() {
                     </div>
                     <p>{msg.content}</p>
                     <div className="reaction-picker">
-                      {REACTIONS.map((emoji) => (
-                        <button
-                          key={emoji}
-                          onClick={() => sendReaction(msg.id!, emoji)}
-                          className="reaction-btn"
-                        >
-                          {emoji}
-                        </button>
-                      ))}
+                      {REACTIONS.map((emoji: string): JSX.Element | null => {
+                        const messageId: string | undefined = msg.id;
+                        if (!messageId) return null;
+                        return (
+                          <button
+                            key={emoji}
+                            onClick={(): void => sendReaction(messageId, emoji)}
+                            className="reaction-btn"
+                          >
+                            {emoji}
+                          </button>
+                        );
+                      })}
                     </div>
                     {msg.reactions && Object.keys(msg.reactions).length > 0 && (
                       <div className="reactions">
-                        {Object.entries(msg.reactions).map(([emoji, users]) => (
-                          <button
-                            key={emoji}
-                            onClick={() => sendReaction(msg.id!, emoji)}
-                            className={`reaction-badge ${users.includes(username) ? "active" : ""}`}
-                            title={users.join(", ")}
-                          >
-                            {emoji} {users.length}
-                          </button>
-                        ))}
+                        {Object.entries(msg.reactions).map(([emoji, users]: [string, string[]]): JSX.Element | null => {
+                          const messageId: string | undefined = msg.id;
+                          if (!messageId) return null;
+                          return (
+                            <button
+                              key={emoji}
+                              onClick={(): void => sendReaction(messageId, emoji)}
+                              className={`reaction-badge ${users.includes(username) ? "active" : ""}`}
+                              title={users.join(", ")}
+                            >
+                              {emoji} {users.length}
+                            </button>
+                          );
+                        })}
                       </div>
                     )}
                   </>
@@ -226,7 +255,7 @@ function App() {
               type="text"
               placeholder={`Message #${currentChannel}...`}
               value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
+              onChange={handleInputMessageChange}
             />
             <button type="submit">Send</button>
           </form>
