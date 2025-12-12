@@ -3,7 +3,7 @@ import cors from "cors";
 import { createServer, Server as HttpServer } from "http";
 import { WebSocketServer, WebSocket, RawData } from "ws";
 
-type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history" | "thread_message" | "open_thread" | "thread_history";
+type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history" | "thread_message" | "open_thread" | "thread_history" | "auth_error" | "auth_success";
 
 interface ChatMessage {
   type: MessageType;
@@ -20,7 +20,10 @@ interface ChatMessage {
   threadId?: string | undefined;
   replyCount?: number | undefined;
   parentMessage?: ChatMessage | undefined;
+  password?: string | undefined;
 }
+
+const HARDCODED_PASSWORD: string = "password";
 
 interface ClientInfo {
   username: string;
@@ -128,6 +131,25 @@ wss.on("connection", (ws: WebSocket): void => {
       const message: ChatMessage = JSON.parse(data.toString()) as ChatMessage;
 
       if (message.type === "join") {
+        if (message.password !== HARDCODED_PASSWORD) {
+          const authError: ChatMessage = {
+            type: "auth_error",
+            username: "",
+            content: "Invalid password",
+            timestamp: Date.now(),
+          };
+          ws.send(JSON.stringify(authError));
+          return;
+        }
+
+        const authSuccess: ChatMessage = {
+          type: "auth_success",
+          username: message.username,
+          content: "Authentication successful",
+          timestamp: Date.now(),
+        };
+        ws.send(JSON.stringify(authSuccess));
+
         const channel: string = "general";
         clients.set(ws, { username: message.username, channel });
         sendChannelHistory(ws, channel);

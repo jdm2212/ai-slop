@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, ChangeEvent, KeyboardEvent, FormEvent } from "react";
 import EmojiPicker from "./EmojiPicker";
 
-type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history" | "thread_message" | "open_thread" | "thread_history";
+type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history" | "thread_message" | "open_thread" | "thread_history" | "auth_error" | "auth_success";
 
 interface ChatMessage {
   type: MessageType;
@@ -24,6 +24,8 @@ const QUICK_REACTIONS: readonly string[] = ["👍", "❤️", "😂", "😮", "�
 
 function App(): JSX.Element {
   const [username, setUsername] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+  const [loginError, setLoginError] = useState<string>("");
   const [isJoined, setIsJoined] = useState<boolean>(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputMessage, setInputMessage] = useState<string>("");
@@ -48,19 +50,31 @@ function App(): JSX.Element {
   }, [threadMessages]);
 
   const connectToChat = (): void => {
-    if (!username.trim()) return;
+    if (!username.trim()) {
+      setLoginError("Username is required");
+      return;
+    }
+    if (!password) {
+      setLoginError("Password is required");
+      return;
+    }
 
     const ws: WebSocket = new WebSocket("ws://localhost:3001");
     wsRef.current = ws;
 
     ws.onopen = (): void => {
-      ws.send(JSON.stringify({ type: "join", username }));
-      setIsJoined(true);
+      ws.send(JSON.stringify({ type: "join", username, password }));
     };
 
     ws.onmessage = (event: MessageEvent): void => {
       const message: ChatMessage = JSON.parse(event.data as string) as ChatMessage;
-      if (message.type === "channel_list") {
+      if (message.type === "auth_error") {
+        setLoginError(message.content);
+        ws.close();
+        return;
+      } else if (message.type === "auth_success") {
+        setIsJoined(true);
+      } else if (message.type === "channel_list") {
         setChannels(message.channels ?? []);
       } else if (message.type === "history") {
         setMessages(message.messages ?? []);
@@ -157,9 +171,15 @@ function App(): JSX.Element {
 
   const handleUsernameChange = (e: ChangeEvent<HTMLInputElement>): void => {
     setUsername(e.target.value);
+    setLoginError("");
   };
 
-  const handleUsernameKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
+  const handlePasswordChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setPassword(e.target.value);
+    setLoginError("");
+  };
+
+  const handleLoginKeyDown = (e: KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === "Enter") {
       connectToChat();
     }
@@ -235,12 +255,20 @@ function App(): JSX.Element {
       <div className="container">
         <div className="join-form">
           <h1>Chat App</h1>
+          {loginError && <div className="login-error">{loginError}</div>}
           <input
             type="text"
             placeholder="Enter your username"
             value={username}
             onChange={handleUsernameChange}
-            onKeyDown={handleUsernameKeyDown}
+            onKeyDown={handleLoginKeyDown}
+          />
+          <input
+            type="password"
+            placeholder="Enter password"
+            value={password}
+            onChange={handlePasswordChange}
+            onKeyDown={handleLoginKeyDown}
           />
           <button onClick={connectToChat}>Join Chat</button>
         </div>

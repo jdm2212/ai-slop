@@ -56,6 +56,16 @@ body {
   background: #0073e6;
 }
 
+.login-error {
+  color: #dc3545;
+  background: #f8d7da;
+  border: 1px solid #f5c6cb;
+  padding: 10px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
 .app-layout {
   display: flex;
   width: 100%;
