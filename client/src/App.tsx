@@ -37,6 +37,8 @@ function App(): JSX.Element {
   const [threadMessages, setThreadMessages] = useState<ChatMessage[]>([]);
   const [threadParentMessage, setThreadParentMessage] = useState<ChatMessage | null>(null);
   const [threadInput, setThreadInput] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [isSearching, setIsSearching] = useState<boolean>(false);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const threadMessagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -250,6 +252,35 @@ function App(): JSX.Element {
     setThreadInput(e.target.value);
   };
 
+  const handleSearchChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    setSearchQuery(e.target.value);
+  };
+
+  const toggleSearch = (): void => {
+    setIsSearching((prev: boolean): boolean => !prev);
+    if (isSearching) {
+      setSearchQuery("");
+    }
+  };
+
+  const wildcardToRegex = (pattern: string): RegExp => {
+    const escaped: string = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    const withWildcards: string = escaped.replace(/\*/g, ".*").replace(/\?/g, ".");
+    return new RegExp(withWildcards, "i");
+  };
+
+  const matchesSearch = (content: string, query: string): boolean => {
+    if (!query.trim()) return true;
+    const regex: RegExp = wildcardToRegex(query);
+    return regex.test(content);
+  };
+
+  const filteredMessages: ChatMessage[] = searchQuery.trim()
+    ? messages.filter((msg: ChatMessage): boolean =>
+        msg.type === "message" && matchesSearch(msg.content, searchQuery)
+      )
+    : messages;
+
   if (!isJoined) {
     return (
       <div className="container">
@@ -307,12 +338,35 @@ function App(): JSX.Element {
 
         <div className="chat-container">
           <header>
-            <h1>#{currentChannel}</h1>
-            <span>Logged in as {username}</span>
+            <div className="header-left">
+              <h1>#{currentChannel}</h1>
+              {isSearching && (
+                <div className="search-box">
+                  <input
+                    type="text"
+                    placeholder="Search messages... (* = any, ? = single char)"
+                    value={searchQuery}
+                    onChange={handleSearchChange}
+                    autoFocus
+                  />
+                  {searchQuery && (
+                    <span className="search-count">
+                      {filteredMessages.filter((m: ChatMessage): boolean => m.type === "message").length} results
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="header-right">
+              <button className="search-toggle" onClick={toggleSearch} title="Search messages">
+                {isSearching ? "✕" : "🔍"}
+              </button>
+              <span>Logged in as {username}</span>
+            </div>
           </header>
 
           <div className="messages">
-            {messages.map((msg: ChatMessage, index: number): JSX.Element => (
+            {filteredMessages.map((msg: ChatMessage, index: number): JSX.Element => (
               <div
                 key={index}
                 className={`message ${msg.type} ${msg.username === username ? "own" : ""}`}

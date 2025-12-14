@@ -176,16 +176,72 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 header h1 {
   font-size: 20px;
   color: #1a1a1a;
+  white-space: nowrap;
 }
 
 header span {
   color: #666;
   font-size: 14px;
+}
+
+.search-toggle {
+  background: #f0f2f5;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.2s;
+}
+
+.search-toggle:hover {
+  background: #e4e6e9;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  max-width: 400px;
+}
+
+.search-box input {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 14px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  outline: none;
+}
+
+.search-box input:focus {
+  border-color: #0084ff;
+}
+
+.search-count {
+  font-size: 12px;
+  color: #666;
+  white-space: nowrap;
 }
 
 .messages {
