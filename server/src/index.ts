@@ -1,7 +1,8 @@
 import express, { Request, Response } from "express";
 import cors from "cors";
-import { createServer, Server as HttpServer } from "http";
+import { createServer, Server as HttpServer, IncomingMessage } from "http";
 import { WebSocketServer, WebSocket, RawData } from "ws";
+import { Duplex } from "stream";
 
 type MessageType = "message" | "join" | "leave" | "reaction" | "switch_channel" | "create_channel" | "channel_list" | "history" | "thread_message" | "open_thread" | "thread_history" | "auth_error" | "auth_success";
 
@@ -36,7 +37,10 @@ app.use(cors());
 app.use(express.json());
 
 const server: HttpServer = createServer(app);
-const wss: WebSocketServer = new WebSocketServer({ server });
+const wss: WebSocketServer = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: false,
+});
 
 const clients: Map<WebSocket, ClientInfo> = new Map();
 const channels: Set<string> = new Set(["general"]);
@@ -50,9 +54,8 @@ function generateId(): string {
 
 function broadcast(message: ChatMessage, channel: string): void {
   const data: string = JSON.stringify(message);
-  wss.clients.forEach((client: WebSocket): void => {
-    const clientInfo: ClientInfo | undefined = clients.get(client);
-    if (client.readyState === WebSocket.OPEN && clientInfo?.channel === channel) {
+  clients.forEach((clientInfo: ClientInfo, client: WebSocket): void => {
+    if (client.readyState === WebSocket.OPEN && clientInfo.channel === channel) {
       client.send(data);
     }
   });
@@ -60,7 +63,7 @@ function broadcast(message: ChatMessage, channel: string): void {
 
 function broadcastToAll(message: ChatMessage): void {
   const data: string = JSON.stringify(message);
-  wss.clients.forEach((client: WebSocket): void => {
+  clients.forEach((_clientInfo: ClientInfo, client: WebSocket): void => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(data);
     }
@@ -94,9 +97,8 @@ function sendChannelHistory(ws: WebSocket, channel: string): void {
 
 function broadcastToThread(message: ChatMessage, threadId: string): void {
   const data: string = JSON.stringify(message);
-  wss.clients.forEach((client: WebSocket): void => {
-    const clientInfo: ClientInfo | undefined = clients.get(client);
-    if (client.readyState === WebSocket.OPEN && clientInfo?.activeThreadId === threadId) {
+  clients.forEach((clientInfo: ClientInfo, client: WebSocket): void => {
+    if (client.readyState === WebSocket.OPEN && clientInfo.activeThreadId === threadId) {
       client.send(data);
     }
   });
@@ -122,8 +124,14 @@ function sendThreadHistory(ws: WebSocket, threadId: string, channel: string): vo
   ws.send(JSON.stringify(historyMessage));
 }
 
-wss.on("connection", (ws: WebSocket): void => {
+function handleConnection(ws: WebSocket): void {
   console.log("New client connected");
+
+  // Handle WebSocket errors to prevent server crashes
+  ws.on("error", (err: Error): void => {
+    console.error("WebSocket error:", err.message);
+  });
+
   sendChannelList(ws);
 
   ws.on("message", (data: RawData): void => {
@@ -344,6 +352,19 @@ wss.on("connection", (ws: WebSocket): void => {
     }
     console.log("Client disconnected");
   });
+}
+
+// Handle WebSocket upgrades for both /ws and / paths
+server.on("upgrade", (request: IncomingMessage, socket: Duplex, head: Buffer): void => {
+  const pathname: string = request.url ?? "/";
+  // Accept connections on /ws (production via ingress) and / (local development)
+  if (pathname === "/ws" || pathname === "/" || pathname === "") {
+    wss.handleUpgrade(request, socket, head, (ws: WebSocket): void => {
+      handleConnection(ws);
+    });
+  } else {
+    socket.destroy();
+  }
 });
 
 app.get("/health", (_req: Request, res: Response): void => {

@@ -22,6 +22,20 @@ interface ChatMessage {
 
 const QUICK_REACTIONS: readonly string[] = ["👍", "❤️", "😂", "😮", "😢", "🔥"] as const;
 
+const getWebSocketUrl = (): string => {
+  // For local K8s testing, connect directly to NodePort
+  if (window.location.hostname === "chat.local") {
+    return "ws://localhost:3001";
+  }
+  // In production, connect via the same host using /ws path
+  if (import.meta.env.PROD) {
+    const protocol: string = window.location.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${window.location.host}/ws`;
+  }
+  // In development, connect directly to the server
+  return "ws://localhost:3001";
+};
+
 function App(): JSX.Element {
   const [username, setUsername] = useState<string>("");
   const [password, setPassword] = useState<string>("");
@@ -61,7 +75,7 @@ function App(): JSX.Element {
       return;
     }
 
-    const ws: WebSocket = new WebSocket("ws://localhost:3001");
+    const ws: WebSocket = new WebSocket(getWebSocketUrl());
     wsRef.current = ws;
 
     ws.onopen = (): void => {

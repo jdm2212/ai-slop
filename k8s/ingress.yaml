@@ -1,0 +1,48 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chat-app-ingress
+  namespace: chat-app
+  labels:
+    app.kubernetes.io/name: chat-app
+  annotations:
+    # Timeouts for long-lived WebSocket connections
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    # WebSocket support - use backend protocol annotation
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$request_uri"
+    # Disable buffering and compression for WebSocket
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: chat.local
+      http:
+        paths:
+          # API and WebSocket traffic to server
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: chat-server
+                port:
+                  number: 3001
+          # WebSocket connections (ws://)
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: chat-server
+                port:
+                  number: 3001
+          # Frontend - catch all other routes
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: chat-client
+                port:
+                  number: 80
